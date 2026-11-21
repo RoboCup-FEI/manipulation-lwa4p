@@ -146,6 +146,7 @@ docker/run_jazzy.sh                                        # mounts src/ read-on
 - Mock hardware, no physics: `ros2 launch lwa4p_moveit_config demo.launch.py`.
 - Gazebo Harmonic (Tomas's): `ros2 launch lwa4p_gazebo gazebo.launch.py`.
 - Isaac Sim 6.2: `ISAACSIM_PATH=<Isaac Sim directory> isaac_sim/run.sh`, then `ros2 launch manipulation_isaac_sim isaac_moveit.launch.py` ([isaac_sim/README.md](isaac_sim/README.md)).
+  Without ROS on the host, run the ROS side in Tomas's image with `docker/run_jazzy_hybrid.sh`, started before `run.sh`.
 
 ## 6. Backends and the shared interface
 
@@ -155,18 +156,18 @@ Everything above the action level must work unchanged on every backend:
 | | Real robot | Mock | Gazebo (Tomas) | Isaac Sim (ours) |
 | --- | --- | --- | --- | --- |
 | Arm | Python driver, Profile Position (§7) | JTC, mock components | JTC | JTC in the `controller_manager` inside Isaac Sim (`isaacsim.ros2.control`) |
-| `gripper_controller` | `GripperCommand`, `gripper_node` | `GripperActionController` | JTC on `gripper_joint` | as in Gazebo |
+| `gripper_controller` | `GripperCommand`, `gripper_node` | `GripperActionController` | JTC on `gripper_joint` | JTC on `gripper_joint` (no gripper action controller in Isaac Sim; adapter: D09) |
 | Force/torque | `ftm_node` (§7) | none | none | planned: `WrenchStamped` on the `ftm_node` topics |
-| Camera | not started by Tomas's launch files | none | `/camera/...` from `gz_bridge.yaml` | planned: the same topics as Gazebo |
+| Camera | not started by Tomas's launch files | none | `/camera/...` from `gz_bridge.yaml` | planned: the `realsense2_camera` topics |
 | Physics | real | none | Tomas's workarounds (no gravity on the arm, PID force drives) | real: gravity, friction, contacts |
 
 - Skills command the gripper through the MoveIt `gripper` group, its named states (`open`, `tube_15mm`, `closed`), or one shared `grasp(width, force)` abstraction.
   Never through raw finger joints.
 - **Isaac Sim rules:**
-  the geometry, scene and ROS names copy Tomas's Gazebo setup;
+  the robot description is the real robot's (Tomas's defaults, with his lab obstacles for MoveIt where the world has them), not his Gazebo setup;
+  the ROS names are the real robot's, except the gripper action until D09 decides the adapter;
   the physics does not copy his workarounds, because RoboCup tasks need working friction and force feedback;
   no private `ros2_control` API;
-  worlds are converted from Tomas's SDF files (`lab` by default, `table` as an option).
   Physics parameters, the URDF import and the camera come from [`DaverSVK/ARM_simulation`](https://github.com/DaverSVK/ARM_simulation), which was made for this team: reuse its code and credit it.
 
 ## 7. Real-robot facts that constrain our code

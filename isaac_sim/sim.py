@@ -1,13 +1,16 @@
 """
-Isaac Sim backend for the LWA 4P: robot, scene, /clock and ros2_control.
+Isaac Sim backend for the LWA 4P: robot, world, /clock and ros2_control.
 
 Run through isaac_sim/run.sh, which prepares the URDF and the environment.
+One stage per start: the static world USD from scenes/ as a sublayer, and the robot,
+imported from the URDF generated from Tomas's model, as a reference at /World/lwa4p.
 """
 
 import argparse
 import json
 from pathlib import Path
 import sys
+import time
 
 from isaacsim import SimulationApp
 
@@ -19,6 +22,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument('--controllers', required=True, help='ros2_control YAML')
     parser.add_argument('--config', required=True, type=Path, help='isaac_sim/config/sim.yaml')
     parser.add_argument('--cache-dir', required=True, type=Path, help='USD cache directory')
+    parser.add_argument('--world', default=None,
+                        help='a world name from scene.worlds in the config (default: scene.world)')
     parser.add_argument('--headless', action='store_true', help='no simulator window')
     parser.add_argument('--max-time', type=float, default=None,
                         help='stop after this much simulated time [s] (for tests)')
@@ -34,6 +39,8 @@ import isaacsim.core.experimental.utils.app as app_utils  # noqa: E402
 import isaacsim.core.experimental.utils.stage as stage_utils  # noqa: E402
 from isaacsim.core.rendering_manager import ViewportManager  # noqa: E402
 from isaacsim.core.simulation_manager import SimulationManager  # noqa: E402
+import omni.usd  # noqa: E402
+from pxr import UsdGeom  # noqa: E402
 from simulation import robot_import  # noqa: E402
 from simulation import robot_setup  # noqa: E402
 from simulation import ros_bridge  # noqa: E402
@@ -41,25 +48,47 @@ from simulation import scene  # noqa: E402
 import yaml  # noqa: E402
 
 ROBOT_PATH = '/World/lwa4p'
+SCENES_DIR = Path(__file__).resolve().parent / 'scenes'
+
+
+def world_path(scene_config: dict, name: str | None) -> Path:
+    """Return the USD of the named world, or of the config's default world."""
+    name = name or scene_config['world']
+    worlds = scene_config['worlds']
+    if name not in worlds:
+        raise SystemExit(f'unknown world {name!r}; choose one of: {", ".join(worlds)}')
+    return SCENES_DIR / worlds[name]
 
 
 def main() -> int:
     config = yaml.safe_load(arguments.config.read_text())
+    world_usd = world_path(config['scene'], arguments.world)
     robot_manifest = json.loads(arguments.robot_manifest.read_text())
 
     ros_bridge.enable_ros_extensions(app_utils)
     simulation_app.update()
 
-    usd_path = robot_import.import_robot(robot_manifest, config['import'], arguments.cache_dir)
-    print(f'[isaac_sim] robot USD: {usd_path}', flush=True)
+    usd_path = robot_import.import_robot(robot_manifest, arguments.cache_dir)
+    print(f'[isaac_sim] robot USD: {usd_path} (inertials: '
+          f'{robot_manifest.get("inertials", "unknown")})', flush=True)
 
     stage_utils.create_new_stage()
     stage_utils.set_stage_units(meters_per_unit=1.0)
     stage = stage_utils.get_current_stage(backend='usd')
-    scene.create_scene(config['scene'])
+    UsdGeom.Xform.Define(stage, '/World')
+    world_root = scene.load_world(stage, world_usd, config['contact'])
     stage_utils.add_reference_to_stage(
         usd_path=str(usd_path), path=ROBOT_PATH, variants=[('Physics', 'physx')])
-    robot_setup.configure_robot(stage, ROBOT_PATH, robot_manifest, config)
+    mount_bodies = robot_setup.configure_robot(stage, ROBOT_PATH, robot_manifest, config)
+    cooking_start = time.monotonic()
+    hulls = robot_setup.convex_hull_counts(
+        omni.usd.get_context().get_stage_id(),
+        robot_setup.mesh_colliders(stage.GetPrimAtPath(ROBOT_PATH)))
+    print(f'[isaac_sim] convex hulls per link: {hulls} '
+          f'(cooked in {time.monotonic() - cooking_start:.1f} s)', flush=True)
+    filtered = scene.filter_robot_mount(world_root, mount_bodies)
+    print(f'[isaac_sim] mounted base {[body.GetName() for body in mount_bodies]} filtered '
+          f'against {filtered} world colliders', flush=True)
     ros_bridge.create_ros_graph(ROBOT_PATH, arguments.controllers)
     simulation_app.update()
 

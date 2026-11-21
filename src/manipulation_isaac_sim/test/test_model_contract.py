@@ -5,10 +5,12 @@ If one of these tests fails after a `main -> devel` sync, Tomas renamed somethin
 update our code and configuration, never his files.
 """
 
+import copy
 import os
 from xml.etree import ElementTree
 
 from ament_index_python.packages import get_package_share_directory
+from manipulation_isaac_sim import isaac_urdf
 import pytest
 import xacro
 import yaml
@@ -69,10 +71,78 @@ def test_srdf_groups_and_states(srdf):
     assert {('gripper', name) for name in GRIPPER_STATES} <= states
 
 
-def test_moveit_controllers_match_tomas_simulation():
+def test_moveit_arm_execution_matches_the_real_robot():
+    """
+    The arm and the execution settings are the real robot's.
+
+    The gripper differs until the simulation gripper adapter is decided (D09): the real
+    gripper_node serves GripperCommand, Isaac Sim a trajectory controller on gripper_joint.
+    """
     ours = load_yaml(share('manipulation_isaac_sim', 'config', 'moveit_controllers.yaml'))
-    tomas = load_yaml(share('lwa4p_gazebo', 'config', 'moveit_controllers.yaml'))
-    assert ours == tomas, 'Tomas changed his MoveIt controllers: update ours to match'
+    real = load_yaml(share('lwa4p_moveit_config', 'config', 'moveit_controllers.yaml'))
+    section = 'moveit_simple_controller_manager'
+    assert ours[section]['arm_controller'] == real[section]['arm_controller'], \
+        'Tomas changed the real arm controller for MoveIt: update ours to match'
+    assert ours['trajectory_execution'] == real['trajectory_execution'], \
+        'Tomas changed the real execution settings: update ours to match'
+
+
+def test_workspace_obstacles_are_found(urdf):
+    """The lab obstacles are in the description, and removing them keeps the robot."""
+    removed = isaac_urdf.remove_workspace_obstacles(copy.deepcopy(urdf))
+    assert removed, (
+        f'no links named {isaac_urdf.OBSTACLE_PREFIX}* fixed to {isaac_urdf.WORLD_LINK}: '
+        'Tomas renamed the workspace obstacles; update isaac_urdf')
+    assert not set(removed) & set(FRAMES)
+
+
+def test_worlds_name_their_moveit_obstacles(urdf):
+    """Every world gives MoveIt obstacles: Tomas's measured ones or its SDF's static models."""
+    worlds = load_yaml(share('manipulation_isaac_sim', 'config', 'worlds.yaml'))
+    assert worlds
+    for name, world in worlds.items():
+        assert world['workspace_obstacles'] or world.get('sdf_obstacles'), name
+        if world.get('sdf_obstacles'):
+            with open(share('lwa4p_gazebo', world['sdf_obstacles']), encoding='utf-8') as file:
+                added = isaac_urdf.add_sdf_obstacles(copy.deepcopy(urdf), file.read())
+            assert added, f'{name}: {world["sdf_obstacles"]} has no static models'
+
+
+def test_link_inertials_fit_the_model(urdf):
+    """The datasheet masses name existing links, whose shapes give valid inertia."""
+    overrides = load_yaml(share('manipulation_isaac_sim', 'config', 'collision_overrides.yaml'))
+    inertials = load_yaml(share('manipulation_isaac_sim', 'config', 'link_inertials.yaml'))
+    root = isaac_urdf.prepare_urdf(
+        ElementTree.tostring(urdf, encoding='unicode'), get_package_share_directory)
+    isaac_urdf.replace_collisions(root, overrides['links'])
+    masses = isaac_urdf.apply_link_inertials(root, inertials['links'])
+    # SCHUNK LWA 4P manual 1344817, 3.2: 12 kg without the base.
+    arm_masses = [mass for name, mass in masses.items() if name.startswith('arm_')]
+    assert len(arm_masses) == 6
+    assert sum(arm_masses) == pytest.approx(12.0)
+    for name in masses:
+        inertia = root.find(f"link[@name='{name}']/inertial/inertia")
+        diagonal = [float(inertia.get(axis)) for axis in ('ixx', 'iyy', 'izz')]
+        assert all(value > 0.0 for value in diagonal), name
+        assert 2 * max(diagonal) <= sum(diagonal) * (1 + 1e-6), f'{name}: triangle inequality'
+
+
+def test_collision_overrides_shrink_existing_shapes(urdf):
+    """Every override names a link that collides in Tomas's model, and stays inside it."""
+    overrides = load_yaml(share('manipulation_isaac_sim', 'config', 'collision_overrides.yaml'))
+    for name in overrides['links']:
+        collisions = urdf.findall(f"link[@name='{name}']/collision")
+        assert collisions, f'{name}: the model has no collision there any more'
+    # The D435 body lies inside Tomas's generous camera box, which keeps MoveIt clear of it.
+    tomas = urdf.find("link[@name='camera_link']/collision")
+    body = overrides['links']['camera_link'][0]
+    tomas_center = [float(value) for value in tomas.find('origin').get('xyz').split()]
+    tomas_size = [float(value) for value in tomas.find('geometry/box').get('size').split()]
+    for axis in range(3):
+        low = body['origin']['xyz'][axis] - body['box'][axis] / 2
+        high = body['origin']['xyz'][axis] + body['box'][axis] / 2
+        assert tomas_center[axis] - tomas_size[axis] / 2 <= low, axis
+        assert high <= tomas_center[axis] + tomas_size[axis] / 2, axis
 
 
 def test_isaac_controllers_serve_moveit():
