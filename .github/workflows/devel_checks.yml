@@ -62,12 +62,8 @@ jobs:
           # The container user does not own the checkout; actions/checkout trusts it
           # only during its own step.
           git config --global --add safe.directory "${GITHUB_WORKSPACE}"
-          base="$(git merge-base origin/main HEAD)"
-          mapfile -t main_packages < <(
-            git ls-tree -r --name-only "${base}" -- src | grep '/package.xml$' |
-              while read -r manifest; do
-                git show "${base}:${manifest}" | sed -n 's|.*<name>\(.*\)</name>.*|\1|p' | head -n 1
-              done)
+          main_names="$(bash .github/scripts/main_package_names.sh origin/main HEAD)"
+          mapfile -t main_packages < <(grep -v '^$' <<< "${main_names}" || true)
           skip_arguments=()
           if (( ${#main_packages[@]} > 0 )); then
             echo "Not testing Tomas's packages: ${main_packages[*]}"
@@ -75,3 +71,41 @@ jobs:
           fi
           colcon test --event-handlers console_cohesion+ "${skip_arguments[@]}"
           colcon test-result --verbose
+
+  cpp-style:
+    runs-on: ubuntu-24.04
+    container: ros:jazzy-ros-base
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out with full history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # the scripts need origin/main to find Tomas's packages
+
+      - name: Install clang-format, ament_uncrustify and ament_cpplint
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends clang-format-18 \
+            ros-jazzy-ament-uncrustify ros-jazzy-ament-cpplint
+          # The container user does not own the checkout (see jazzy-build).
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}"
+
+      # Step 1: the formatter. Its output is the reference, so the fix is one command.
+      - name: Formatting (fix with .github/scripts/format_cpp.sh)
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          bash .github/scripts/format_cpp.sh --check origin/main
+
+      # Step 2 runs only on formatted code, so it reports what a formatter cannot fix.
+      # Copyright headers are not required (AGENTS.md, section 4).
+      - name: cpplint
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          mapfile -d '' -t files < <(bash .github/scripts/team_cpp_files.sh origin/main)
+          if (( ${#files[@]} == 0 )); then
+            echo "OK: the team's packages have no C/C++ files."
+            exit 0
+          fi
+          ament_cpplint --filters=-legal/copyright "${files[@]}"

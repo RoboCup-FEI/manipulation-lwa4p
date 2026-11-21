@@ -1,0 +1,41 @@
+# First pass of .github/scripts/format_cpp.sh, before ament_uncrustify --reformat.
+# It fixes what uncrustify leaves alone and cpplint rejects: include order, namespace
+# end comments, spacing and braces. Not a .clang-format on purpose: editors must not
+# pick it up, and packages need no formatter configuration (AGENTS.md, section 4).
+#
+# Base: the ROS 2 configuration of ament_clang_format (ament/ament_lint, branch jazzy,
+# Apache-2.0). Additions: InsertBraces (stable output together with uncrustify) and
+# include groups in the order cpplint expects (C system, C++ system, other).
+---
+Language: Cpp
+BasedOnStyle: Google
+
+AccessModifierOffset: -2
+AlignAfterOpenBracket: AlwaysBreak
+BraceWrapping:
+  AfterClass: true
+  AfterFunction: true
+  AfterNamespace: true
+  AfterStruct: true
+  AfterEnum: true
+BreakBeforeBraces: Custom
+ColumnLimit: 100
+ConstructorInitializerIndentWidth: 0
+ContinuationIndentWidth: 2
+DerivePointerAlignment: false
+PointerAlignment: Middle
+ReflowComments: false
+InsertBraces: true
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^<[a-z0-9_]+>$'
+    Priority: 2
+  - Regex: '^<.*\.h>$'
+    Priority: 1
+  - Regex: '^<[^.]*>$'
+    Priority: 1
+  - Regex: '^<.*>$'
+    Priority: 3
+  - Regex: '.*'
+    Priority: 4
+...

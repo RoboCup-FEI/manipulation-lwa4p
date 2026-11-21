@@ -76,8 +76,16 @@ CI exists to catch exactly that.
    Declare every build and test dependency of our packages in `package.xml`: CI installs only those through `rosdep`.
 3. **The model contract holds** (`src/manipulation_isaac_sim/test/test_model_contract.py`, part of step 2): the joint names, frames, SRDF groups, named states and controller names our code relies on still exist in Tomas's model.
    If Tomas renames one, the `main → devel` pull request fails with a clear message.
+4. **Our C/C++ code is formatted and passes cpplint** (job `cpp-style`), in every package that is not in `main`.
+   Step 1 runs `.github/scripts/format_cpp.sh --check`: if the formatter would change anything, the job fails and shows the diff.
+   The fix is always the same command: `source /opt/ros/jazzy/setup.bash && .github/scripts/format_cpp.sh`, then commit.
+   Step 2 runs `ament_cpplint` without the copyright check on the formatted code, so it reports only what a formatter cannot fix.
+   Tomas's packages are found the same way as in step 2 (`.github/scripts/main_package_names.sh`).
 
 The `devel` ruleset requires these checks, a pull request, and an up-to-date branch, with an empty bypass list.
+
+**Planned (Dmitrii and Viktor, 2026-11-14):** CI also runs `clang-tidy` and the other linters on our packages.
+Until then, the `ament` linters run only in packages whose tests enable them (`ament_lint_auto` in C++, `test_flake8.py`/`test_pep257.py` in Python), and nothing checks `isaac_sim/`; run them locally (§4).
 
 ## 3. Where our code goes
 
@@ -104,16 +112,22 @@ The `devel` ruleset requires these checks, a pull request, and an up-to-date bra
 ## 4. Code style contract
 
 The team-wide rules that keep the repository consistent.
-A package's own `.clang-format` or linter configuration takes precedence over this list.
+A package's own linter configuration takes precedence over this list, but not over the CI checks (§2).
 Never reformat Tomas's files.
 
-- **C++:** C++17, formatted by a `.clang-format` in each of our packages (Google-based, 100 columns, braces on a new line for classes, functions and namespaces).
+- **C++:** C++17 in the ROS 2 style (100 columns, braces on a new line for classes, functions and namespaces, `char * ptr`).
+  The reference is `.github/scripts/format_cpp.sh`: clang-format with `.github/format/clang-format.yaml`, then `ament_uncrustify --reformat`.
+  Its output passes `ament_uncrustify` and `ament_cpplint`, the linters of `ament_lint_common`, so packages keep the default `ament_lint_auto` setup and need no formatter configuration.
+  It needs clang-format 18 (`sudo apt install clang-format` on Ubuntu 24.04) and a sourced Jazzy environment.
+  Agents: run it on C/C++ changes before committing.
+  Where our habits differ from the ROS 2 ecosystem, the ROS 2 style wins.
   Do not put a `.clang-format` in the repository root or in `src/`: editors would apply it to Tomas's code.
+  If a package enables `ament_copyright` in its tests, every file needs an MIT header: `ament_copyright --add-missing "RoboCup-FEI" mit <files>`, then run `format_cpp.sh`.
   Headers are `.hpp` with `#pragma once`, under `include/<package>/`.
   Split each node into `<name>_node.cpp` (only `main` and spin), `<name>_ros.cpp` (ROS interface, no logic) and logic files that build and test without ROS.
   Types in `PascalCase`, functions and variables in `snake_case`, members end with `_`, constants in `UPPER_CASE`.
   Package code lives in the package namespace.
-- **Python:** PEP 8, 100 columns, single quotes, the `ament` linters.
+- **Python:** PEP 8, 99 columns (the `ament_flake8` limit), single quotes, the `ament` linters.
   Move non-trivial logic into a module without ROS.
 - **Packages:** parameters in YAML files, not in launch files; Python launch files; resources found through the ament index, not relative paths; a `README.md` in every package.
 - **Markdown:** one sentence per line, an empty line around headings and code blocks, a language on every code block.
@@ -168,6 +182,9 @@ Everything above the action level must work unchanged on every backend:
 - **No streaming input in Tomas's current public driver:** it samples each trajectory at 20 Hz and sends Profile Position targets.
   MoveIt Servo, velocity control and high-rate policies therefore do not work on the real arm with this driver.
   This is a limit of the current driver, not of the hardware; a streaming or admittance input is an open question with Tomas.
+- **Driver change ahead (2026-11-20):** Tomas has a new 24 V battery and a C++ driver based on FZI's `schunk_canopen_driver`, not published yet.
+  He showed smooth interpolated trajectories at nearly full speed.
+  Until his code and new limits are in `main`, every fact in this section still applies.
 - **CAN:** the arm is on `can0` (nodes 3–8).
   The WSG 50 (`gripper_node`) and the FTM 75 (`ftm_node`) share `can1` in separate processes.
   Processes may share a bus only with unique CAN IDs and with each process filtering its own IDs.
@@ -198,6 +215,7 @@ Everything above the action level must work unchanged on every backend:
 
 - Interface decisions and open questions: [docs/manipulation_interface_consolidation.md](docs/manipulation_interface_consolidation.md).
   Follow its `Agreed` items; do not implement `Open` items without a recorded decision.
+  Where a decision below is newer than the consolidation, the decision below wins (D10 and D11, 2026-11-15; actions and profiles, 2026-11-20).
 - Application architecture: Dmitrii's architecture sketch, with its busy worker policy (not published in this repository).
   Ask Dmitrii before designing the command/runner layer, admission or worker behaviour.
 - Diagram: [docs/manipulation_architecture.txt](docs/manipulation_architecture.txt).
@@ -208,9 +226,18 @@ Everything above the action level must work unchanged on every backend:
 
 **Decisions:**
 
-- v1 exposes exactly three actions: `GoToPosition`, `Grip`, `Release`, with force behaviour from v1.
-  There are no `Pick` or `Place` actions; the AI team composes them from the three.
-- `GoToPosition` receives TCP-pose candidates and selects the best feasible plan found within one shared search-time budget.
+- v1 exposes three actions: `GoToPosition`, `Grip`, `Release` (Dmitrii, 2026-11-20).
+  There are no `Pick` or `Place` actions; the AI team composes them from these.
+  The separate `MoveToNamed` action of 2026-11-15 is dropped; named poses go through `GoToPosition`.
+- **v1 has no force behaviour** (Dmitrii, 2026-11-15; replaces consolidation D10).
+  Guarded moves, release on contact and force thresholds come after v1: they need the FTM calibration matrix, tare before each approach and slow-profile-only motion.
+  The WSG 50's own grip force (`gripper_node` `max_effort`) is not FTM-based and may be used.
+- A `GoToPosition` goal holds either TCP-pose candidates or a `named_target`, exactly one of them; otherwise the result is `INVALID_GOAL` (Dmitrii, 2026-11-20).
+  With candidates, the server selects the best feasible plan found within one shared search-time budget.
+  A named target is a joint-space pose stored in our YAML, not in the BT; the BT refers to it only by name (replaces consolidation D11).
+  Tomas's SRDF states stay as they are; we do not edit his SRDF in `devel`.
+- v1 movement profiles are `PTP` (joint-space motion planned by MTC) and `LIN` (straight Cartesian line through MTC `CartesianPath`; the whole path or a failure) (Dmitrii, 2026-11-20).
+  No blending in v1: every `GoToPosition` ends at rest.
 - One worker serves all three actions, without a queue.
   A request that arrives while it is busy is accepted and immediately aborted with outcome `BUSY`; it never runs.
 - The real robot runs Tomas's driver.
@@ -219,6 +246,9 @@ Everything above the action level must work unchanged on every backend:
 - Navigation and perception belong to other teams; this repository consumes their poses and TF.
 - BehaviorTree.CPP and the BT XML belong to the AI team.
   This team provides the ROS 2 actions and the failure enumeration.
+- The AI team adapts to our interface for now (2026-11-14); changes they need come later, through the consolidation.
+- The failure enumeration starts as a simplified draft of Viktor's proposal §7 and is settled at a team meeting; keep only codes that lead to a different reaction by the caller.
+- Work split for v1 (2026-11-15): Dmitrii designs the interface and the server and writes the three v1 actions; Viktor builds the Isaac Sim worlds and physics.
 - Tomas removed his example solutions on purpose.
   Write our own; do not port the logic of `bin_pick.py` or `pick_tube.py`.
 - From Patrik Bakyta's diploma, models and measurements may be used with credit; his algorithms may not.
@@ -243,4 +273,4 @@ Everything above the action level must work unchanged on every backend:
 7. For straight moves, use MTC `CartesianPath`, not Pilz LIN; keep KDL as the IK solver (see `docs/architecture_review.md`).
 8. Check that a dependency has a Jazzy binary before adding it.
 
-Planned packages (names not final): `manipulation_interfaces` (actions, failure enumeration), `manipulation_skill_server` (skill server and MTC, C++), `manipulation_sim` (simulation gripper adapter), `lwa4p_bringup` (launch files and robot configuration).
+Planned packages (names not final): `manipulation_interfaces` (the three actions, failure enumeration), `manipulation_skill_server` (skill server and MTC, C++), `manipulation_sim` (simulation gripper adapter), `lwa4p_bringup` (launch files and robot configuration).
