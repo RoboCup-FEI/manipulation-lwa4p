@@ -1,0 +1,27 @@
+# Move the tool centre point (TCP) to one of several candidate poses, or to a named arm pose.
+# The goal holds exactly one of `candidates` and `named_target`; otherwise INVALID_GOAL.
+# The motion always ends at rest. The server never grips, releases or lifts on its own.
+
+# Goal
+
+uint8 PTP=0  # joint-space motion planned with moveit
+uint8 LIN=1  # straight TCP line; the whole line or a failure
+
+# The server plans to the candidates within its configured time budget
+# and moves to the best plan it found, not to the first feasible one.
+TcpCandidate[] candidates
+
+# A joint-space pose from the server configuration, such as "home".
+string named_target
+
+# PTP or LIN. A named target allows only PTP.
+uint8 profile
+---
+# Result
+
+Outcome outcome
+
+# The id of the candidate the server moved to; "" for a named target or when no motion started.
+string selected_candidate_id
+---
+# Feedback: none in v1.
