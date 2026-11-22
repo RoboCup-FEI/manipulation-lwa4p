@@ -3,17 +3,19 @@
 The skill server of the manipulation subsystem: it executes `GoToPosition` goals from [`manipulation_interfaces`](../manipulation_interfaces/README.md).
 Maintainer: Dmitrii Ognev (RoboCup-FEI manipulation team).
 
-**Status: no executable yet.**
-This version contains the core without ROS, the ROS interface (`SkillServer`: parameters and the `go_to_position` action server) and their tests.
-The motion backend on the MoveIt Task Constructor (MTC), the node executable and its launch file come next; until then there is nothing to launch.
+**Status: `GoToPosition` with `named_target` works on mock hardware, Gazebo and Isaac Sim.**
+TCP candidates (`PTP`, then `LIN`) are not planned yet: such a goal ends with `PLANNING_FAILED` and says so.
 `Grip` and `Release` follow after `GoToPosition`.
+To run it on the LWA 4P, use [`lwa4p_bringup`](../lwa4p_bringup/README.md).
 
 ## Overview
 
-The package has two libraries.
+The package has three libraries and one executable.
 The core (`manipulation_skill_server_core`) is plain C++17 and does not include ROS, MoveIt or MTC headers.
 The ROS layer (`manipulation_skill_server_ros`) converts messages and parameters for the core and holds no logic.
-Both are tested with a fake motion backend, so they build and run without a robot or a simulator.
+The MTC backend (`manipulation_skill_server_mtc`) plans and executes motions with the MoveIt Task Constructor (MTC).
+`skill_server_node` connects them.
+The core and the ROS layer are tested with a fake motion backend, so their tests run without MoveIt, a robot or a simulator.
 
 | Header | Contents |
 | --- | --- |
@@ -26,6 +28,8 @@ Both are tested with a fake motion backend, so they build and run without a robo
 | `conversions.hpp` (ROS) | Goal and result messages to and from the core; the only conversion of outcome codes to `Outcome.msg` |
 | `goal_context.hpp` (ROS) | `GoalContext`: a `TaskContext` on an action goal handle |
 | `skill_server_ros.hpp` (ROS) | `SkillServer`: parameters and the action server |
+| `parameters.hpp` (ROS) | Reading parameters that may already be declared |
+| `mtc_motion_backend.hpp` (MTC) | `MtcMotionBackend`: the `MotionBackend` on MTC and `move_group` |
 
 Every action result has the same shape: `Outcome outcome` (code and message) plus the action's own fields, such as `selected_candidate_id`.
 The roles follow the Command pattern: the tasks are commands, `BusyTaskRunner` is the invoker, `MotionBackend` is the receiver, and `SkillServer` creates the tasks.
@@ -102,6 +106,34 @@ skill_server:
 ```
 
 The server reads parameters that are already declared, too, so it works on a node created with `automatically_declare_parameters_from_overrides(true)`, which MTC needs.
+
+## MTC motion backend
+
+- **Robot model:** the URDF and SRDF of `move_group`, copied from its parameters `robot_description` and `robot_description_semantic` when the server starts, unless the server has its own.
+  In Gazebo and Isaac Sim they differ from the MoveIt package's, and MTC must check collisions with the same geometry that `move_group` executes with.
+- **Named target:** one MTC task: the current state, then a joint-space motion.
+  It tries joint interpolation first, the shortest joint-space path, and the planning pipeline (OMPL) only if interpolation collides.
+- **Motion cost:** the joint-space path length (`cost::PathLength`).
+- **Speed:** the planners use `default_velocity_scaling_factor` and `default_acceleration_scaling_factor` of the MoveIt configuration; MTC alone would ignore them and move faster than MoveIt allows.
+- **Execution:** the `execute_task_solution` action of `move_group`, which needs `move_group/ExecuteTaskSolutionCapability`.
+  The backend sends its own goal instead of MTC's `Task::execute()`: after a cancel request it waits until `move_group` reports that the motion stopped, so `CANCELED` means the arm is at rest.
+  If `move_group` does not finish the motion within its planned duration plus 30 s, the backend stops it and reports `EXECUTION_FAILED`; if `move_group` does not answer at all, the server ends with `INTERNAL_ERROR`, because the arm may still move.
+- **Planning cancellation:** checked between MTC planning steps.
+
+| Parameter | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `mtc.arm_group` | string | required | MoveIt planning group of the arm |
+| `mtc.planning_pipeline` | string | `ompl` | Planning pipeline used when joint interpolation fails |
+| `mtc.move_group_node` | string | `move_group` | Node whose robot description the server copies |
+| `robot_description_planning.default_velocity_scaling_factor`, `..._acceleration_scaling_factor` | double | required | From the MoveIt configuration (`joint_limits.yaml`) |
+
+The node also needs the MoveIt parameters `robot_description_kinematics`, `robot_description_planning` and the planning pipelines; `lwa4p_bringup` passes them.
+
+## Executable `skill_server_node`
+
+- Creates the node `skill_server` with `automatically_declare_parameters_from_overrides(true)`, which MoveIt and MTC need, and spins it in a `SingleThreadedExecutor`.
+- Handles SIGINT and SIGTERM itself instead of rclcpp: on Ctrl-C it cancels the running goal while ROS still works, waits until `move_group` stopped the arm, and only then shuts ROS down.
+- Exits with code 1 if a parameter is missing or invalid, or the robot model cannot be loaded.
 
 ## Build and test
 

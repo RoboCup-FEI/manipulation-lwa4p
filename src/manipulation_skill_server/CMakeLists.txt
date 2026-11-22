@@ -7,6 +7,9 @@ endif()
 
 find_package(ament_cmake REQUIRED)
 find_package(manipulation_interfaces REQUIRED)
+find_package(moveit_ros_planning REQUIRED)
+find_package(moveit_task_constructor_core REQUIRED)
+find_package(moveit_task_constructor_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(Threads REQUIRED)
@@ -36,6 +39,24 @@ target_link_libraries(${PROJECT_NAME}_ros PUBLIC
   rclcpp_action::rclcpp_action
 )
 set_target_properties(${PROJECT_NAME}_ros PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# The motion backend on the MoveIt Task Constructor.
+add_library(${PROJECT_NAME}_mtc STATIC
+  src/mtc_motion_backend.cpp
+)
+target_link_libraries(${PROJECT_NAME}_mtc PUBLIC
+  ${PROJECT_NAME}_core
+  ${moveit_task_constructor_msgs_TARGETS}
+  moveit_ros_planning::moveit_robot_model_loader
+  moveit_task_constructor_core::moveit_task_constructor_core_stages
+  rclcpp::rclcpp
+  rclcpp_action::rclcpp_action
+)
+set_target_properties(${PROJECT_NAME}_mtc PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+add_executable(skill_server_node src/skill_server_node.cpp)
+target_link_libraries(skill_server_node ${PROJECT_NAME}_ros ${PROJECT_NAME}_mtc)
+install(TARGETS skill_server_node DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)

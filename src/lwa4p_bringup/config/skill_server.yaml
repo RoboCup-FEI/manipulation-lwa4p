@@ -1,0 +1,17 @@
+# The skill server on the LWA 4P. Parameters: manipulation_skill_server/README.md.
+# The planning budget and the selection weights keep their defaults.
+skill_server:
+  ros__parameters:
+    mtc:
+      arm_group: arm
+      planning_pipeline: ompl
+
+    # Joint-space poses a GoToPosition goal can name in named_target.
+    # home, work1 and work2 equal the SRDF states of the same names in lwa4p_moveit_config
+    # (2026-11-22); they are ours and may change independently of Tomas's SRDF.
+    named_poses:
+      joint_names: [arm_1_joint, arm_2_joint, arm_3_joint, arm_4_joint, arm_5_joint, arm_6_joint]
+      names: [home, work1, work2]
+      home: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+      work1: [0.0, 0.0, 1.4735, 0.0, 0.0, 0.0]
+      work2: [0.0, -0.3094, 1.414, 0.8955, 0.0, 0.0]

@@ -4,9 +4,9 @@
   <name>manipulation_skill_server</name>
   <version>0.1.0</version>
   <description>
-    Skill server of the manipulation subsystem: the GoToPosition action server with its
-    core without ROS (the task, the busy task runner and the motion backend interface).
-    The MoveIt Task Constructor backend and the node executable follow.
+    Skill server of the manipulation subsystem: the GoToPosition action server, its core
+    without ROS (the task, the busy task runner and the motion backend interface) and the
+    motion backend on the MoveIt Task Constructor.
   </description>
   <maintainer email="165507983+dmitriiognev@users.noreply.github.com">Dmitrii Ognev</maintainer>
   <license>MIT</license>
@@ -14,6 +14,9 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>manipulation_interfaces</depend>
+  <depend>moveit_ros_planning</depend>
+  <depend>moveit_task_constructor_core</depend>
+  <depend>moveit_task_constructor_msgs</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_action</depend>
 

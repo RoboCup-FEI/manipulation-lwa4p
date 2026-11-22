@@ -30,6 +30,7 @@
 
 #include "manipulation_skill_server/conversions.hpp"
 #include "manipulation_skill_server/goal_context.hpp"
+#include "manipulation_skill_server/parameters.hpp"
 #include "rclcpp/logging.hpp"
 #include "rclcpp_action/create_server.hpp"
 
@@ -41,17 +42,6 @@ namespace
 
 // MoveIt's default allowed planning time; here it is shared by all candidates of one goal.
 constexpr double DEFAULT_PLANNING_BUDGET_S = 5.0;
-
-template<typename T>
-T parameter(rclcpp::Node & node, const std::string & name, const T & default_value)
-{
-  // The MTC backend needs a node that declares its parameter overrides automatically,
-  // so a parameter from the YAML file may be declared already.
-  if (!node.has_parameter(name)) {
-    return node.declare_parameter<T>(name, default_value);
-  }
-  return node.get_parameter(name).get_value<T>();
-}
 
 GoToPositionSettings load_go_to_position_settings(rclcpp::Node & node)
 {
