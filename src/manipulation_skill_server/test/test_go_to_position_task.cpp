@@ -361,7 +361,9 @@ TEST_F(GoToPositionTaskTest, FailedExecutionEndsWithExecutionFailedWithoutRetry)
 TEST_F(GoToPositionTaskTest, BackendExceptionPropagates)
 {
   backend_.candidate_costs = {{"a", 1.0}};
-  backend_.during_execution = []() {throw std::runtime_error("arm state unknown");};
+  backend_.during_execution = [](const CancellationToken &) {
+      throw std::runtime_error("arm state unknown");
+    };
   GoToPositionTask task(
     std::make_unique<FakeTaskContext<GoToPositionResult>>(record_),
     candidates_request({make_candidate("a")}), backend_, named_poses_, settings_);

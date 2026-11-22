@@ -125,8 +125,9 @@ public:
   ExecutionResult execution_result{ExecutionStatus::Succeeded, ""};
   /// Runs inside planning, for example to cancel or to throw.
   std::function<void()> during_planning;
-  /// Runs inside execution.
-  std::function<void()> during_execution;
+  /// Runs inside execution, for example to wait for cancellation or to throw;
+  /// it may change `execution_result`.
+  std::function<void(const CancellationToken &)> during_execution;
 
   // Record.
   int plan_calls{0};
@@ -173,11 +174,12 @@ public:
     return result;
   }
 
-  ExecutionResult execute(const PlannedMotion & motion, const CancellationToken &) override
+  ExecutionResult execute(
+    const PlannedMotion & motion, const CancellationToken & cancellation) override
   {
     executed_ids.push_back(motion.candidate_id());
     if (during_execution) {
-      during_execution();
+      during_execution(cancellation);
     }
     return execution_result;
   }

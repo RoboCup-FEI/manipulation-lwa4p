@@ -6,6 +6,9 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 find_package(ament_cmake REQUIRED)
+find_package(manipulation_interfaces REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
 find_package(Threads REQUIRED)
 
 # The core without ROS: tasks, runner and backend interfaces. Its tests link only this.
@@ -19,8 +22,20 @@ target_include_directories(${PROJECT_NAME}_core PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 target_link_libraries(${PROJECT_NAME}_core PUBLIC Threads::Threads)
-# The ROS layer will be a shared library linking this one.
 set_target_properties(${PROJECT_NAME}_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# The ROS layer: parameters, the action server and message conversions, without logic.
+add_library(${PROJECT_NAME}_ros STATIC
+  src/conversions.cpp
+  src/skill_server_ros.cpp
+)
+target_link_libraries(${PROJECT_NAME}_ros PUBLIC
+  ${PROJECT_NAME}_core
+  ${manipulation_interfaces_TARGETS}
+  rclcpp::rclcpp
+  rclcpp_action::rclcpp_action
+)
+set_target_properties(${PROJECT_NAME}_ros PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -33,6 +48,12 @@ if(BUILD_TESTING)
       test_named_pose_table)
     ament_add_gtest(${test_name} test/${test_name}.cpp)
     target_link_libraries(${test_name} ${PROJECT_NAME}_core)
+  endforeach()
+  foreach(test_name
+      test_conversions
+      test_skill_server_ros)
+    ament_add_gtest(${test_name} test/${test_name}.cpp TIMEOUT 120)
+    target_link_libraries(${test_name} ${PROJECT_NAME}_ros)
   endforeach()
 endif()
 
