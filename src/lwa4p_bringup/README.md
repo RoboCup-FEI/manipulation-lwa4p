@@ -6,12 +6,12 @@ Maintainer: Dmitrii Ognev (RoboCup-FEI manipulation team).
 ## Overview
 
 [`manipulation_skill_server`](../manipulation_skill_server/README.md) knows no robot; everything specific to the LWA 4P is here:
-the MoveIt group, the named poses, and how to start the server with MoveIt on each backend.
+the MoveIt group, the TCP frame, the named poses, a planner setting, and how to start the server with MoveIt on each backend.
 
 | File | Contents |
 | --- | --- |
 | `launch/skill_server.launch.py` | A backend with MoveIt, and the skill server |
-| `config/skill_server.yaml` | The MoveIt group and the named poses of the LWA 4P |
+| `config/skill_server.yaml` | The MoveIt group, the TCP frame, the named poses and the OMPL collision-check step of the LWA 4P |
 
 ## Launch
 
@@ -42,9 +42,26 @@ ros2 action send_goal /go_to_position manipulation_interfaces/action/GoToPositio
 
 Press Ctrl-C in the `send_goal` terminal during a motion to cancel the goal: the arm stops where it is.
 
+A TCP candidate is a pose of `gripper_tcp` in any TF frame; a zero stamp means the latest transform.
+From `work1`, the first goal moves the TCP 5 cm along its own x axis (`PTP`, profile 0), the second 5 cm along its z axis, which points out of the gripper, on a straight line (`LIN`, profile 1):
+
+```bash
+ros2 action send_goal /go_to_position manipulation_interfaces/action/GoToPosition \
+  "{profile: 0, candidates: [{id: a, quality: .nan, tcp_pose: {header: {frame_id: gripper_tcp},
+    pose: {position: {x: 0.05}, orientation: {w: 1.0}}}}]}"
+ros2 action send_goal /go_to_position manipulation_interfaces/action/GoToPosition \
+  "{profile: 1, candidates: [{id: a, quality: .nan, tcp_pose: {header: {frame_id: gripper_tcp},
+    pose: {position: {z: 0.05}, orientation: {w: 1.0}}}}]}"
+```
+
+`LIN` cannot start in a wrist singularity (joint 5 at 0), which `home`, `work1` and `work2` are: the `PTP` goal leaves it first.
+
 ## Configuration
 
-`config/skill_server.yaml` sets the MoveIt group (`arm`) and the named poses.
+`config/skill_server.yaml` sets the MoveIt group (`arm`), the TCP frame of the candidates (`gripper_tcp`, Tomas's grasp frame) and the named poses.
 `home`, `work1` and `work2` equal the SRDF states of the same names in `lwa4p_moveit_config` on 2026-11-22; they are ours and may change independently of Tomas's SRDF.
 Positions are radians, one per joint in `named_poses.joint_names`; write them as doubles (`0.0`).
+It also sets `ompl.arm.longest_valid_segment_fraction` to 0.0003 for the skill server's own OMPL pipeline: OMPL then checks collisions about every 0.01 rad of joint motion.
+With MoveIt's default (0.005, about 0.17 rad on this arm) OMPL skipped thin obstacles of the lab scene, and MoveIt rejected 10 of 33 OMPL paths afterwards; with 0.0003 it rejected none of 35 (mock, 2026-11-22).
+`move_group` keeps its own setting.
 The other parameters are described in the skill server's README.

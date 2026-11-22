@@ -85,6 +85,16 @@ TEST(Conversions, NanQualityMeansNoEstimate)
   EXPECT_FALSE(to_request(goal).candidates[0].quality.has_value());
 }
 
+TEST(Conversions, NegativeStampIsKeptForValidation)
+{
+  GoToPosition::Goal goal;
+  goal.candidates.push_back(make_candidate_msg("a", 0.5));
+  goal.candidates[0].tcp_pose.header.stamp.sec = -1;
+  goal.candidates[0].tcp_pose.header.stamp.nanosec = 0;
+
+  EXPECT_EQ(to_request(goal).candidates[0].tcp_pose.stamp_ns, -1'000'000'000);
+}
+
 TEST(Conversions, NamedTargetAndUnknownProfileAreKeptForValidation)
 {
   GoToPosition::Goal goal;

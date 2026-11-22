@@ -21,7 +21,9 @@ uint8 profile
 
 Outcome outcome
 
-# The id of the candidate the server moved to; "" for a named target or when no motion started.
+# The id of the candidate whose plan the server chose, whatever happened in the motion afterwards;
+# "" for a named target, when no plan was chosen (INVALID_GOAL, PLANNING_FAILED, a cancel during
+# planning) and with INTERNAL_ERROR.
 string selected_candidate_id
 ---
 # Feedback: none in v1.

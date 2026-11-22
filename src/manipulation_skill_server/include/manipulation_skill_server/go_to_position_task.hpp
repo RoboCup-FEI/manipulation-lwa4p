@@ -48,7 +48,8 @@ struct GoToPositionRequest
 struct GoToPositionResult
 {
   Outcome outcome;
-  /// The candidate the arm moved to; empty for a named target or when no motion started.
+  /// The candidate whose plan was chosen, also when its motion was canceled or failed; empty
+  /// for a named target and when no plan was chosen.
   std::string selected_candidate_id;
 };
 

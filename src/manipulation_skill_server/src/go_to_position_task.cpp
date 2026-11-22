@@ -184,6 +184,9 @@ std::optional<std::string> GoToPositionTask::find_candidate_error(std::size_t in
   if (candidate.tcp_pose.frame_id.empty()) {
     return name + " has an empty frame_id";
   }
+  if (candidate.tcp_pose.stamp_ns < 0) {
+    return name + " has a negative stamp";
+  }
   if (!is_finite(candidate.tcp_pose.pose.position_m)) {
     return name + " has a non-finite position";
   }

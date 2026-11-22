@@ -24,8 +24,6 @@
 #include <cstdint>
 #include <optional>
 
-#include "rclcpp/time.hpp"
-
 namespace manipulation_skill_server
 {
 
@@ -34,6 +32,8 @@ namespace
 
 using GoToPosition = manipulation_interfaces::action::GoToPosition;
 using OutcomeMsg = manipulation_interfaces::msg::Outcome;
+
+constexpr std::int64_t NANOSECONDS_PER_SECOND = 1'000'000'000;
 
 // to_request() casts the profile number, so the core values must equal the action constants.
 static_assert(static_cast<std::uint8_t>(MotionProfile::Ptp) == GoToPosition::Goal::PTP);
@@ -44,7 +44,10 @@ TcpCandidate to_candidate(const manipulation_interfaces::msg::TcpCandidate & msg
   TcpCandidate candidate;
   candidate.id = msg.id;
   candidate.tcp_pose.frame_id = msg.tcp_pose.header.frame_id;
-  candidate.tcp_pose.stamp_ns = rclcpp::Time(msg.tcp_pose.header.stamp).nanoseconds();
+  // Not rclcpp::Time: it throws on a negative stamp, which must end as INVALID_GOAL instead.
+  const auto & stamp = msg.tcp_pose.header.stamp;
+  candidate.tcp_pose.stamp_ns =
+    static_cast<std::int64_t>(stamp.sec) * NANOSECONDS_PER_SECOND + stamp.nanosec;
   const auto & position = msg.tcp_pose.pose.position;
   candidate.tcp_pose.pose.position_m = {position.x, position.y, position.z};
   const auto & orientation = msg.tcp_pose.pose.orientation;

@@ -154,6 +154,13 @@ TEST_F(GoToPositionTaskTest, RejectsCandidateWithEmptyFrame)
   expect_invalid(candidates_request({candidate}), "empty frame_id");
 }
 
+TEST_F(GoToPositionTaskTest, RejectsCandidateWithNegativeStamp)
+{
+  TcpCandidate candidate = make_candidate("a");
+  candidate.tcp_pose.stamp_ns = -1;
+  expect_invalid(candidates_request({candidate}), "negative stamp");
+}
+
 TEST_F(GoToPositionTaskTest, RejectsCandidateWithNonFinitePosition)
 {
   TcpCandidate candidate = make_candidate("a");
