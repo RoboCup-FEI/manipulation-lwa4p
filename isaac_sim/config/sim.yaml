@@ -108,6 +108,7 @@ scene:
   worlds:
     lab: lwa4p_lab.usd
     table: lwa4p_table.usd
+    arena: lwa4p_arena.usda
 
 viewport:
   eye: [1.6, -1.2, 0.9]

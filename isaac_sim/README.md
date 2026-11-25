@@ -109,6 +109,7 @@ export ROS_DOMAIN_ID=<n>
 ISAACSIM_PATH=<Isaac Sim 6.2 directory> isaac_sim/run.sh             # with the window
 ISAACSIM_PATH=<Isaac Sim 6.2 directory> isaac_sim/run.sh --headless  # without
 ISAACSIM_PATH=<Isaac Sim 6.2 directory> isaac_sim/run.sh --world table  # the table world
+ISAACSIM_PATH=<Isaac Sim 6.2 directory> isaac_sim/run.sh --world arena  # the RoboCup HCC arena
 
 # terminal 2, after "[isaac_sim] launched fully"
 export ROS_DOMAIN_ID=<n>
