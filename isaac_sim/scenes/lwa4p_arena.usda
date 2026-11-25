@@ -49,4 +49,9 @@ def Xform "lwa4p_arena"
         double3 xformOp:translate = (0, 0, 10)
         uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
     }
+
+    def DomeLight "sky"
+    {
+        float inputs:intensity = 800
+    }
 }
