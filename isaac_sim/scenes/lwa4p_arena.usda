@@ -1,0 +1,57 @@
+#usda 1.0
+(
+    defaultPrim = "lwa4p_arena"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "lwa4p_arena"
+{
+    def Xform "arena" (
+        prepend references = @./robocup_arena/2026_09_01_RoboCup_HCC_Arena_V1.usd@
+    )
+    {
+        double3 xformOp:translate = (-40.2, -24.9, -0.100)
+        float xformOp:rotateX = 90
+        float3 xformOp:scale = (0.01, 0.01, 0.01)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateX", "xformOp:scale"]
+
+        over "Rooms"
+        {
+            over "Ceiling"
+            {
+                token visibility = "invisible"
+            }
+        }
+    }
+
+    def Xform "floor"
+    {
+        double3 xformOp:translate = (0, 0, -0.135)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+
+        def Cube "collision" (
+            prepend apiSchemas = ["PhysicsCollisionAPI"]
+        )
+        {
+            double size = 1
+            float3 xformOp:scale = (40, 40, 0.05)
+            uniform token[] xformOpOrder = ["xformOp:scale"]
+            token visibility = "invisible"
+        }
+    }
+
+    def DistantLight "sun"
+    {
+        color3f inputs:color = (0.8, 0.8, 0.8)
+        float inputs:intensity = 1000
+        quatd xformOp:orient = (0.9669702, 0.049987912, 0.24993958, 0)
+        double3 xformOp:translate = (0, 0, 10)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient"]
+    }
+
+    def DomeLight "sky"
+    {
+        float inputs:intensity = 800
+    }
+}
